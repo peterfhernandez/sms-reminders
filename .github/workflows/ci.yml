@@ -1,0 +1,44 @@
+# ============================================================
+# CI — Runs on every Pull Request
+# Lints, type-checks, and runs tests before merge is allowed
+# ============================================================
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, staging, develop]
+
+jobs:
+  ci:
+    name: Lint, Type-check & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Run tests
+        run: npm test -- --passWithNoTests
+        env:
+          # Use staging Supabase for CI tests
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          MOBILE_MESSAGE_API_KEY: ${{ secrets.STAGING_MOBILE_MESSAGE_API_KEY }}
+          MOBILE_MESSAGE_SENDER_ID: ${{ secrets.MOBILE_MESSAGE_SENDER_ID }}
