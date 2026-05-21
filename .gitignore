@@ -1,0 +1,46 @@
+# ============================================================
+# SMS Reminders — .gitignore
+# ============================================================
+
+# Dependencies
+node_modules/
+
+# Environment files — NEVER commit these
+.env
+.env.local
+.env.staging
+.env.production
+.env.*.local
+
+# Supabase local dev artifacts
+supabase/.temp/
+supabase/.branches/
+
+# Deno cache
+.deno/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Editor
+.idea/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Misc
+*.pem

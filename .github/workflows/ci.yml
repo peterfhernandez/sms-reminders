@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main, staging, develop]
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  # ── 1. Lint ────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+  # ── 2. Unit tests (no Supabase needed) ────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        # tests/unit/ only — no database required
+        run: npm test
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # ── 3. Typecheck Edge Functions (Deno) ─────────────────────
+  typecheck-functions:
+    name: Typecheck Edge Functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Check create-reminder
+        run: deno check supabase/functions/create-reminder/index.ts
+
+      - name: Check send-reminders
+        run: deno check supabase/functions/send-reminders/index.ts
+
+      - name: Check transcribe
+        run: deno check supabase/functions/transcribe/index.ts
+
+      # Deno unit tests for Edge Functions
+      # Uncomment this block once index.test.ts files are added:
+      #
+      # - name: Deno unit tests
+      #   run: deno test supabase/functions/ --allow-env
+      #   env:
+      #     SUPABASE_URL: http://127.0.0.1:54321
+      #     SUPABASE_SERVICE_ROLE_KEY: placeholder
+      #     CLICKSEND_USERNAME: placeholder
+      #     CLICKSEND_API_KEY: placeholder
+      #     CLICKSEND_FROM: placeholder
+      #     OPENAI_API_KEY: placeholder
+
+  # ── 4. Integration tests (requires local Supabase) ─────────
+  # Disabled by default — enable once integration tests are written.
+  # When enabled, this job spins up a local Supabase instance via Docker.
+  #
+  # integration-tests:
+  #   name: Integration Tests
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Setup Node.js 20
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
+  #         cache: "npm"
+  #
+  #     - name: Install dependencies
+  #       run: npm ci
+  #
+  #     - name: Setup Supabase CLI
+  #       uses: supabase/setup-cli@v1
+  #       with:
+  #         version: latest
+  #
+  #     - name: Start local Supabase
+  #       run: supabase start
+  #
+  #     - name: Apply migrations
+  #       run: supabase db reset
+  #
+  #     - name: Serve Edge Functions
+  #       run: supabase functions serve &
+  #       # & runs it in the background; give it a moment to start
+  #
+  #     - name: Wait for functions to be ready
+  #       run: sleep 5
+  #
+  #     - name: Run integration tests
+  #       run: npm run test:integration
+  #       env:
+  #         SUPABASE_URL: http://127.0.0.1:54321
+  #         SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+  #         SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
+  #         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  #         CLICKSEND_USERNAME: ${{ secrets.CLICKSEND_USERNAME }}
+  #         CLICKSEND_API_KEY: ${{ secrets.CLICKSEND_API_KEY }}
+  #         CLICKSEND_FROM: ${{ secrets.CLICKSEND_FROM }}

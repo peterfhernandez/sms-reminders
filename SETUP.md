@@ -489,7 +489,194 @@ on conflict do nothing;
 
 ---
 
-## Day-to-day workflow
+## Step 13 — Automated testing
+
+### Testing philosophy
+
+The project uses three test layers, each with a different scope and speed profile. CI only runs unit tests automatically (no infrastructure needed). Integration and e2e tests are run manually during development or against staging after a deploy.
+
+| Layer | Location | Runs against | When to run | Speed |
+|---|---|---|---|---|
+| Unit | `tests/unit/` | Nothing (pure functions) | Every commit — CI | < 5 s |
+| Integration | `tests/integration/` | Local Supabase | During development, before PRs | ~30 s |
+| E2E | `tests/e2e/` | Local or staging Supabase + real ClickSend | Before merging to main | ~60 s |
+
+Edge Functions (Deno) have their own test runner — see §Edge Function tests below.
+
+---
+
+### Folder structure
+
+```
+tests/
+├── unit/                        # Pure logic — no network, no database
+│   ├── reminders/               # CLI tool logic (validation, formatting, etc.)
+│   └── functions/               # Extracted helper functions from Edge Functions
+│
+├── integration/                 # Calls local Supabase REST API and Edge Functions
+│   ├── create-reminder.test.js  # POST /functions/v1/create-reminder
+│   ├── send-reminders.test.js   # POST /functions/v1/send-reminders
+│   ├── transcribe.test.js       # POST /functions/v1/transcribe
+│   └── cli.test.js              # reminders.js CLI against local DB
+│
+├── e2e/                         # Full happy-path flows
+│   └── full-flow.test.js        # create → wait for pg_cron → verify delivery
+│
+└── helpers/
+    └── supabase.js              # Shared test client, createTestReminder(), cleanup()
+```
+
+---
+
+### Running tests locally
+
+**Unit tests** — no Supabase needed, run any time:
+
+```powershell
+npm test
+```
+
+**Integration tests** — requires local Supabase running:
+
+```powershell
+# Terminal 1: ensure Supabase is running
+supabase start
+
+# Terminal 2: serve Edge Functions (needed for HTTP-level integration tests)
+supabase functions serve
+
+# Terminal 3: run integration tests
+npm run test:integration
+```
+
+**E2E tests** — requires Supabase + `supabase functions serve` + ClickSend test credits:
+
+```powershell
+npm run test:e2e
+```
+
+**All tests together:**
+
+```powershell
+npm run test:all
+```
+
+**With coverage report (unit only):**
+
+```powershell
+npm run test:coverage
+# Opens coverage/ folder — view coverage/lcov-report/index.html in a browser
+```
+
+---
+
+### Edge Function tests (Deno)
+
+Edge Functions run on Deno, so their logic is tested with Deno's built-in test runner rather than Jest. Test files live alongside the function code:
+
+```
+supabase/functions/
+├── create-reminder/
+│   ├── index.ts
+│   └── index.test.ts       ← Deno test file (to be added later)
+├── send-reminders/
+│   ├── index.ts
+│   └── index.test.ts
+└── transcribe/
+    ├── index.ts
+    └── index.test.ts
+```
+
+Run Deno tests locally:
+
+```powershell
+# Test a single function
+deno test supabase/functions/create-reminder/index.test.ts --allow-env --allow-net
+
+# Test all functions
+deno test supabase/functions/ --allow-env --allow-net
+```
+
+Deno tests use the `Deno.test()` API and are already typechecked by CI via `deno check`.
+
+---
+
+### Test helpers
+
+`tests/helpers/supabase.js` provides shared utilities for integration and e2e tests:
+
+```js
+import { sb, functionsUrl, anonHeaders, createTestReminder, cleanup }
+  from '../helpers/supabase.js';
+
+// sb              — service-role Supabase client (bypasses RLS)
+// functionsUrl    — base URL for Edge Functions, e.g. http://127.0.0.1:54321/functions/v1
+// anonHeaders     — Authorization header using the anon key
+// createTestReminder(overrides?) — inserts a test reminder, returns the row
+// cleanup(ids)    — deletes test rows by ID (call in afterEach)
+```
+
+Example integration test pattern (actual tests to be written later):
+
+```js
+// tests/integration/create-reminder.test.js
+import { functionsUrl, anonHeaders, cleanup } from '../helpers/supabase.js';
+
+const createdIds = [];
+afterEach(() => cleanup(createdIds));
+
+test('creates a reminder from a valid JSON body', async () => {
+  const res = await fetch(`${functionsUrl}/create-reminder`, {
+    method: 'POST',
+    headers: anonHeaders,
+    body: JSON.stringify({
+      phone:   '+61412345678',
+      message: 'Integration test reminder',
+      send_at: new Date(Date.now() + 3_600_000).toISOString(),
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  const body = await res.json();
+  expect(body.status).toBe('pending');
+  createdIds.push(body.id);   // cleaned up in afterEach
+});
+```
+
+---
+
+### What will be tested (coverage plan)
+
+**Unit tests (to be written):**
+
+- `scripts/reminders.js` — phone validation, date validation, argument parsing, help text output
+- Any pure helper functions extracted from Edge Functions (date formatting, cron parsing, etc.)
+
+**Integration tests (to be written):**
+
+- `create-reminder` Edge Function — valid JSON body, valid multipart (mocked audio), missing fields, invalid phone, past `send_at`
+- `send-reminders` Edge Function — picks up pending reminders, marks them sent, handles ClickSend errors
+- `transcribe` Edge Function — valid audio, oversized file, unsupported MIME type
+- CLI (`reminders.js`) — list filtering, create, edit, cancel, get, log
+
+**E2E tests (to be written):**
+
+- Full voice reminder flow: audio upload → Whisper transcription → reminder created → pg_cron fires → SMS delivered → status updated to `sent`
+- Recurring reminder flow: reminder sent → new pending reminder re-queued at next occurrence
+
+---
+
+### CI behaviour
+
+The GitHub Actions `ci.yml` workflow:
+
+- Runs **unit tests** (`npm test`) on every push and pull request — no Supabase needed
+- Runs **Deno typecheck** on all Edge Function files on every push
+- Does **not** run integration or e2e tests in CI automatically (they require a running database)
+
+To run integration tests in CI in future, you would add a `services:` block to spin up a local Supabase instance via Docker — the commented-out section in `ci.yml` shows where this would go.
+
+---
 
 ```powershell
 # Start a new feature
@@ -533,6 +720,112 @@ git commit -m "feat: add contacts table migration"
 
 ---
 
+## Managing reminders — CLI tool
+
+`scripts/reminders.js` is a Node CLI for viewing, creating, editing, and deleting reminders. It talks directly to the Supabase REST API using your service role key, so it works against both local and production databases depending on what's in your `.env`.
+
+```powershell
+# Shorthand via npm
+npm run reminders -- <command>
+
+# Or directly
+node scripts/reminders.js <command>
+```
+
+### Listing reminders
+
+```powershell
+# Pending only (default)
+npm run reminders -- list
+
+# All reminders
+npm run reminders -- list --status=all
+
+# Filter by status
+npm run reminders -- list --status=failed
+npm run reminders -- list --status=sent
+
+# Filter by phone
+npm run reminders -- list --phone=+61412345678
+```
+
+Output looks like:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ID         │ Phone          │ Name   │ Status  │ Send at             │ Recurs │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 3f2a1b0c…  │ +61412345678   │ Peter  │ pending │ 21 May 26 09:00 AEST│ —      │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Viewing a single reminder
+
+```powershell
+npm run reminders -- get 3f2a1b0c-1234-...
+
+# Show delivery log (ClickSend responses, success/fail history)
+npm run reminders -- log 3f2a1b0c-1234-...
+```
+
+### Creating a reminder
+
+```powershell
+npm run reminders -- create `
+  --phone="+61412345678" `
+  --message="Your dentist appointment is tomorrow at 10am" `
+  --send-at="2026-06-01T09:00:00+10:00" `
+  --timezone="Australia/Sydney" `
+  --name="Peter"
+
+# With recurrence (every Monday at 9am)
+npm run reminders -- create `
+  --phone="+61412345678" `
+  --message="Weekly standup in 15 minutes" `
+  --send-at="2026-06-02T09:00:00+10:00" `
+  --recurrence="0 9 * * 1"
+```
+
+### Editing a reminder
+
+Only the fields you pass will be updated — everything else stays as-is.
+
+```powershell
+# Change the message
+npm run reminders -- edit 3f2a1b0c-... --message="Updated reminder text"
+
+# Reschedule
+npm run reminders -- edit 3f2a1b0c-... --send-at="2026-06-03T10:00:00+10:00"
+
+# Add recurrence to a one-off
+npm run reminders -- edit 3f2a1b0c-... --recurrence="0 9 * * 1-5"
+```
+
+### Cancelling and deleting
+
+```powershell
+# Cancel (sets status to 'cancelled' — can be undone via edit)
+npm run reminders -- cancel 3f2a1b0c-...
+
+# Hard delete (irreversible — prompts for confirmation)
+npm run reminders -- delete 3f2a1b0c-...
+```
+
+### Pointing at production vs local
+
+The CLI reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from `.env`. To run a command against your production database, temporarily override them inline:
+
+```powershell
+$env:SUPABASE_URL="https://<prod-ref>.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY="<prod-service-role-key>"
+npm run reminders -- list --status=failed
+# Reset to local when done:
+$env:SUPABASE_URL="http://127.0.0.1:54321"
+$env:SUPABASE_SERVICE_ROLE_KEY="<local-key>"
+```
+
+---
+
 ## Useful commands
 
 ```powershell
@@ -545,8 +838,25 @@ supabase db push              # push migrations to linked remote project
 supabase functions serve      # serve Edge Functions locally
 supabase functions deploy     # deploy a function to Supabase cloud
 
+# Reminder management
+npm run reminders -- list
+npm run reminders -- list --status=all
+npm run reminders -- get <id>
+npm run reminders -- log <id>
+npm run reminders -- cancel <id>
+
+# Testing
+npm test                      # unit tests only (no Supabase needed)
+npm run test:integration      # integration tests (needs: supabase start + functions serve)
+npm run test:e2e              # end-to-end tests (needs: supabase start + functions serve)
+npm run test:all              # all three layers
+npm run test:coverage         # unit tests with coverage report
+
+# Deno tests (Edge Functions)
+deno test supabase/functions/ --allow-env --allow-net
+
 # Seed test data
-node scripts/seed.js
+npm run seed
 
 # Open Studio
 Start-Process "http://127.0.0.1:54323"
@@ -581,12 +891,21 @@ sms-reminders\
 │
 ├── scripts\
 │   ├── Setup-Local.ps1             # one-time Windows 11 setup
-│   └── seed.js                     # insert sample reminders locally
+│   ├── seed.js                     # insert sample reminders locally
+│   └── reminders.js                # CLI: list/get/create/edit/cancel/delete/log
+│
+├── tests\
+│   ├── unit\                       # fast, no I/O — run by CI on every push
+│   ├── integration\                # requires local Supabase — run manually
+│   ├── e2e\                        # full flow — run manually before releases
+│   └── helpers\
+│       └── supabase.js             # shared client, createTestReminder(), cleanup()
 │
 ├── .env.example                    # template (safe to commit)
 ├── .env                            # your secrets (gitignored)
 ├── .gitignore
-├── package.json                    # Node tooling only
+├── jest.config.js                  # Jest config (ESM + test layer path patterns)
+├── package.json                    # Node tooling + test scripts
 └── SETUP.md                        # this file
 ```
 
