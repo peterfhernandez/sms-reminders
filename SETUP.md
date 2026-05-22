@@ -1,6 +1,6 @@
 # SMS Reminders — Setup Guide (Windows 11)
 
-**Stack:** Supabase (Postgres + Edge Functions + pg_cron) · ClickSend (SMS) · Whisper/OpenAI (voice-to-text) · Node.js (local tooling) · Docker · GitHub Actions
+**Stack:** Supabase (Postgres + Edge Functions + pg_cron) · SMS Provider (ClickSend or Twilio) · Whisper/OpenAI (voice-to-text) · Node.js (local tooling) · Docker · GitHub Actions
 
 ---
 
@@ -34,7 +34,7 @@
 │                   ▼                                         │
 │  Edge Function: send-reminders                              │
 │      │  queries pending reminders                           │
-│      │  calls ClickSend REST API                            │
+│      │  calls SMS provider (ClickSend or Twilio)            │
 │      │  marks reminder sent/failed                          │
 │      └─► delivery_log                                       │
 │                                                             │
@@ -67,7 +67,8 @@ POST /functions/v1/create-reminder  (multipart, includes audio file)
                                           │
                               send-reminders Edge Function
                                           │
-                              ClickSend REST API → SMS delivered
+                              SMS Provider REST API → SMS delivered
+                              (ClickSend or Twilio)
 ```
 
 ### Branch strategy
@@ -291,7 +292,11 @@ For production/staging, run the same `ALTER DATABASE` commands after deploying (
 
 ---
 
-## Step 6 — Set up ClickSend
+## Step 6 — Set up SMS Provider (ClickSend or Twilio)
+
+Choose **one** provider: ClickSend or Twilio. The system uses the `SMS_PROVIDER` environment variable to switch between them at runtime.
+
+### Option A: ClickSend
 
 1. Create an account at [clicksend.com](https://www.clicksend.com)
 2. Go to **Dashboard → API Credentials** — copy your username and API key
@@ -299,6 +304,14 @@ For production/staging, run the same `ALTER DATABASE` commands after deploying (
    - Use a short alphanumeric name (max 11 chars), e.g. `Reminders`
    - OR buy a virtual number from ClickSend for two-way SMS
 4. Add test credits — ClickSend has a free trial with AUD credit
+5. Set in `.env.local`:
+
+   ```env
+   SMS_PROVIDER=clicksend
+   CLICKSEND_USERNAME=your-username
+   CLICKSEND_API_KEY=your-api-key
+   CLICKSEND_FROM=Reminders
+   ```
 
 Test a send manually:
 
@@ -309,6 +322,39 @@ Invoke-RestMethod `
   -Method POST `
   -Headers @{ Authorization = "Basic $creds"; "Content-Type" = "application/json" } `
   -Body '{"messages":[{"to":"+61400000000","body":"Test from SMS Reminders","from":"Reminders"}]}'
+```
+
+### Option B: Twilio
+
+1. Create an account at [twilio.com](https://www.twilio.com)
+2. Go to **Console → Account Info** — copy your Account SID and Auth Token
+3. In the **Phone Numbers** section, purchase an SMS-capable phone number (or use your trial number)
+4. Set in `.env.local`:
+
+   ```env
+   SMS_PROVIDER=twilio
+   TWILIO_ACCOUNT_SID=your-account-sid
+   TWILIO_AUTH_TOKEN=your-auth-token
+   TWILIO_FROM=+1234567890
+   ```
+
+   Replace `+1234567890` with your Twilio phone number in E.164 format (includes country code)
+
+5. **Enable billing** if using production (trial accounts have limited SMS credits)
+
+Test a send manually:
+
+```powershell
+$accountSid = "your-account-sid"
+$authToken = "your-auth-token"
+$creds = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$accountSid:$authToken"))
+$body = "To=%2B61400000000&From=%2B1234567890&Body=Test+from+SMS+Reminders"
+
+Invoke-RestMethod `
+  -Uri "https://api.twilio.com/2010-04-01/Accounts/$accountSid/Messages.json" `
+  -Method POST `
+  -Headers @{ Authorization = "Basic $creds"; "Content-Type" = "application/x-www-form-urlencoded" } `
+  -Body $body
 ```
 
 ---
@@ -473,15 +519,33 @@ Protect `main` and `staging`:
 
 Go to your repo → **Settings → Secrets and variables → Actions → New repository secret**
 
+### Required secrets (all environments)
+
 | Secret                         | Where to get it                                                                        |
 | ------------------------------ | -------------------------------------------------------------------------------------- |
 | `SUPABASE_ACCESS_TOKEN`        | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) |
 | `STAGING_SUPABASE_PROJECT_REF` | Staging project → Settings → General                                                   |
 | `PROD_SUPABASE_PROJECT_REF`    | Production project → Settings → General                                                |
-| `CLICKSEND_USERNAME`           | ClickSend dashboard → API Credentials                                                  |
-| `CLICKSEND_API_KEY`            | ClickSend dashboard → API Credentials                                                  |
-| `CLICKSEND_FROM`               | Your sender ID (e.g. `Reminders`)                                                      |
+| `SMS_PROVIDER`                 | Your choice: `clicksend` or `twilio`                                                   |
 | `OPENAI_API_KEY`               | platform.openai.com → API keys                                                         |
+
+### SMS Provider secrets (choose one set)
+
+**If `SMS_PROVIDER=clicksend`:**
+
+| Secret               | Where to get it                       |
+| -------------------- | ------------------------------------- |
+| `CLICKSEND_USERNAME` | ClickSend dashboard → API Credentials |
+| `CLICKSEND_API_KEY`  | ClickSend dashboard → API Credentials |
+| `CLICKSEND_FROM`     | Your sender ID (e.g. `Reminders`)     |
+
+**If `SMS_PROVIDER=twilio`:**
+
+| Secret               | Where to get it               |
+| -------------------- | ----------------------------- |
+| `TWILIO_ACCOUNT_SID` | Twilio console → Account Info |
+| `TWILIO_AUTH_TOKEN`  | Twilio console → Account Info |
+| `TWILIO_FROM`        | Your Twilio phone number      |
 
 These secrets are used by `deploy-staging.yml` and `deploy-production.yml` to:
 
@@ -499,10 +563,22 @@ These secrets are used by `deploy-staging.yml` and `deploy-production.yml` to:
 supabase link --project-ref <STAGING_PROJECT_REF>
 supabase db push
 
+# Set secrets — choose the appropriate set based on your SMS provider
+
+# If using ClickSend:
 supabase secrets set `
+  SMS_PROVIDER="clicksend" `
   CLICKSEND_USERNAME="your-username" `
   CLICKSEND_API_KEY="your-api-key" `
   CLICKSEND_FROM="Reminders" `
+  OPENAI_API_KEY="sk-..."
+
+# OR if using Twilio:
+supabase secrets set `
+  SMS_PROVIDER="twilio" `
+  TWILIO_ACCOUNT_SID="your-account-sid" `
+  TWILIO_AUTH_TOKEN="your-auth-token" `
+  TWILIO_FROM="+1234567890" `
   OPENAI_API_KEY="sk-..."
 
 supabase functions deploy create-reminder --no-verify-jwt
@@ -555,11 +631,11 @@ on conflict do nothing;
 
 The project uses three test layers, each with a different scope and speed profile. CI only runs unit tests automatically (no infrastructure needed). Integration and e2e tests are run manually during development or against staging after a deploy.
 
-| Layer       | Location             | Runs against                               | When to run                    | Speed |
-| ----------- | -------------------- | ------------------------------------------ | ------------------------------ | ----- |
-| Unit        | `tests/unit/`        | Nothing (pure functions)                   | Every commit — CI              | < 5 s |
-| Integration | `tests/integration/` | Local Supabase                             | During development, before PRs | ~30 s |
-| E2E         | `tests/e2e/`         | Local or staging Supabase + real ClickSend | Before merging to main         | ~60 s |
+| Layer       | Location             | Runs against                                | When to run                    | Speed |
+| ----------- | -------------------- | ------------------------------------------- | ------------------------------ | ----- |
+| Unit        | `tests/unit/`        | Nothing (pure functions)                    | Every commit — CI              | < 5 s |
+| Integration | `tests/integration/` | Local Supabase                              | During development, before PRs | ~30 s |
+| E2E         | `tests/e2e/`         | Local or stage Supabase + real SMS provider | Before merging to main         | ~60 s |
 
 Edge Functions (Deno) have their own test runner — see §Edge Function tests below.
 

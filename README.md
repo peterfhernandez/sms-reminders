@@ -2,7 +2,7 @@
 
 A Supabase-based SMS reminder service that sends scheduled SMS messages, supports voice-to-text transcription, and provides a CLI for reminder management.
 
-**Stack:** Supabase (Postgres + Edge Functions + pg_cron) · ClickSend (SMS) · Whisper/OpenAI (voice-to-text) · Node.js (local tooling) · Docker · GitHub Actions
+**Stack:** Supabase (Postgres + Edge Functions + pg_cron) · SMS Provider (ClickSend or Twilio) · Whisper/OpenAI (voice-to-text) · Node.js (local tooling) · Docker · GitHub Actions
 
 ---
 
@@ -48,15 +48,31 @@ Create `.env.local` for development (copy from `.env.example`):
 Copy-Item .env.example .env.local
 ```
 
-Fill in your local Supabase keys after running `supabase start`:
+Fill in your local Supabase keys after running `supabase start`, plus your SMS provider credentials:
+
+**For ClickSend:**
 
 ```env
 SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_ANON_KEY=<local anon key>
 SUPABASE_SERVICE_ROLE_KEY=<local service_role key>
+SMS_PROVIDER=clicksend
 CLICKSEND_USERNAME=your-username
 CLICKSEND_API_KEY=your-api-key
 CLICKSEND_FROM=Reminders
+OPENAI_API_KEY=sk-...
+```
+
+**For Twilio:**
+
+```env
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_ANON_KEY=<local anon key>
+SUPABASE_SERVICE_ROLE_KEY=<local service_role key>
+SMS_PROVIDER=twilio
+TWILIO_ACCOUNT_SID=your-account-sid
+TWILIO_AUTH_TOKEN=your-auth-token
+TWILIO_FROM=+1234567890
 OPENAI_API_KEY=sk-...
 ```
 
