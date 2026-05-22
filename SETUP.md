@@ -1007,3 +1007,24 @@ Called automatically by pg_cron every minute. Can also be triggered manually (us
 | `CLICKSEND_FROM`            | Yes      | Sender ID (max 11 chars alphanumeric) |
 | `OPENAI_API_KEY`            | Yes      | OpenAI API key (for Whisper)          |
 | `NODE_ENV`                  | No       | `development` or `production`         |
+
+## Branch Protection Rules
+
+After pushing branches, go to repo → Settings → Branches
+
+### For branch `staging`
+
+1. Click "Add rule" → Pattern: staging
+2. ✅ Require a pull request before merging (1 approval if that makes sense with the number of people on the team = 1)
+3. ✅ Dismiss stale pull request approvals
+4. ✅ Require status checks to pass
+5. ✅ Require branches to be up to date
+6. ✅ Enforce all the above for administrators
+
+### For branch `main`
+
+1. Click "Add rule" → Pattern: main
+2. ✅ Require a pull request before merging (2 approvals)
+3. ✅ Require status checks to pass
+4. ✅ Require branches to be up to date
+5. ✅ Enforce all the above for administrators
