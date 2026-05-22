@@ -6,7 +6,7 @@
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  LOCAL DEV (your Windows 11 machine)                        │
 │                                                             │
@@ -51,7 +51,7 @@
 
 ### Data flow: voice reminder
 
-```
+```text
 User records audio
       │
       ▼
@@ -206,7 +206,7 @@ supabase start
 
 You'll see output like:
 
-```
+```env
 API URL: http://127.0.0.1:54321
 DB URL:  postgresql://postgres:postgres@127.0.0.1:54322/postgres
 Studio:  http://127.0.0.1:54323
@@ -508,7 +508,7 @@ Edge Functions (Deno) have their own test runner — see §Edge Function tests b
 
 ### Folder structure
 
-```
+```text
 tests/
 ├── unit/                        # Pure logic — no network, no database
 │   ├── reminders/               # CLI tool logic (validation, formatting, etc.)
@@ -575,7 +575,7 @@ npm run test:coverage
 
 Edge Functions run on Deno, so their logic is tested with Deno's built-in test runner rather than Jest. Test files live alongside the function code:
 
-```
+```text
 supabase/functions/
 ├── create-reminder/
 │   ├── index.ts
@@ -757,7 +757,7 @@ npm run reminders -- list --phone=+61412345678
 
 Output looks like:
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ ID         │ Phone          │ Name   │ Status  │ Send at             │ Recurs │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -875,7 +875,7 @@ git log --oneline --graph --all   # visual branch history
 
 ## Project structure
 
-```
+```text
 sms-reminders\
 ├── .github\
 │   └── workflows\
