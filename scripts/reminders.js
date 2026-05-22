@@ -255,7 +255,7 @@ async function cmdEdit(id, updates) {
     die("Provide at least one field to update: --message, --send-at, --recurrence, --phone, --name");
   }
 
-  const { data, error } = await sb
+  const { error } = await sb
     .from("reminders")
     .update(updates)
     .eq("id", id)
