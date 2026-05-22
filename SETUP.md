@@ -78,6 +78,27 @@ POST /functions/v1/create-reminder  (multipart, includes audio file)
 | `staging` | Pre-release testing | Lint + typecheck + migrate + deploy funcs |
 | `main`    | Production          | Same as staging, against prod project     |
 
+### Branch Protection Rules
+
+After pushing branches, go to repo → Settings → Branches
+
+#### For branch `staging`
+
+1. Click "Add rule" → Pattern: staging
+2. ✅ Require a pull request before merging (1 approval if that makes sense with the number of people on the team = 1)
+3. ✅ Dismiss stale pull request approvals
+4. ✅ Require status checks to pass
+5. ✅ Require branches to be up to date
+6. ✅ Enforce all the above for administrators
+
+#### For branch `main`
+
+1. Click "Add rule" → Pattern: main
+2. ✅ Require a pull request before merging (2 approvals)
+3. ✅ Require status checks to pass
+4. ✅ Require branches to be up to date
+5. ✅ Enforce all the above for administrators
+
 ---
 
 ## Step 1 — Install tools
@@ -195,7 +216,7 @@ Get a personal access token for CI/CD:
 
 ```powershell
 # From your project folder:
-Copy-Item .env.example .env
+Copy-Item .env.example .env.local
 ```
 
 Start local Supabase:
@@ -214,7 +235,7 @@ anon key:          eyJ...
 service_role key:  eyJ...
 ```
 
-Copy these into `.env`:
+Copy these into `.env.local`:
 
 ```env
 SUPABASE_URL=http://127.0.0.1:54321
@@ -231,7 +252,7 @@ CLICKSEND_FROM=Reminders
 OPENAI_API_KEY=sk-...
 ```
 
-> `.env` is in `.gitignore` — it will never be committed to git.
+> `.env.local` is in `.gitignore` — it will never be committed to git.
 
 ### The automated route (alternative)
 
@@ -241,7 +262,7 @@ Instead of the manual steps above, just run:
 .\scripts\Setup-Local.ps1
 ```
 
-This script installs missing tools, starts Supabase, applies migrations, auto-writes the Supabase keys into `.env`, and seeds sample data. You still need to add ClickSend and OpenAI keys manually.
+This script installs missing tools, starts Supabase, applies migrations, auto-writes the Supabase keys into `.env.local`, and seeds sample data. You still need to add ClickSend and OpenAI keys manually.
 
 ---
 
@@ -294,17 +315,42 @@ Invoke-RestMethod `
 
 ## Step 7 — Set up OpenAI (Whisper)
 
-1. Go to [platform.openai.com](https://platform.openai.com) → **API keys** → **Create new secret key**
-2. Copy the key into `.env` as `OPENAI_API_KEY=sk-...`
-3. Ensure you have billing set up — Whisper costs ~$0.006/minute of audio
+OpenAI's Whisper API transcribes audio files to text. This is required for voice-based reminders.
+
+### Prerequisites
+
+- An OpenAI account (sign up at [platform.openai.com](https://platform.openai.com) if you don't have one)
+- **Billing enabled** on your account — Whisper costs ~$0.006 per minute of audio
+
+### Setup
+
+1. Go to [platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)
+2. Click **Create new secret key**
+3. **Set permissions** (important for security):
+   - **Project**: Select your project (or create one called "SMS Reminders")
+   - **Permissions**: Restrict to **Whisper API only** (do NOT give it access to GPT-4, GPT-3.5, or other models)
+   - This means if the key leaks, attackers can only use it for transcription, not expensive model calls
+4. Click **Create** and copy the key immediately (you won't be able to see it again)
+5. Add it to `.env.local`:
+
+   ```env
+   OPENAI_API_KEY=sk-proj-...
+   ```
+
+6. **Enable billing:** Go to [platform.openai.com/account/billing/overview](https://platform.openai.com/account/billing/overview) and add a payment method. Without billing enabled, API calls will fail with a 401 error.
+
+### Verify it works
 
 Test transcription locally with the Edge Function:
 
 ```powershell
-# Serve functions locally (in a separate terminal):
+# Terminal 1: start Supabase
+supabase start
+
+# Terminal 2: serve Edge Functions
 supabase functions serve
 
-# In another terminal — send a test audio file:
+# Terminal 3: send a test audio file (replace with your audio file path)
 $headers = @{ Authorization = "Bearer <local anon key>" }
 $form = @{ audio = Get-Item "C:\path\to\test.mp3" }
 Invoke-RestMethod `
@@ -313,6 +359,19 @@ Invoke-RestMethod `
   -Headers $headers `
   -Form $form
 ```
+
+You should see:
+
+```json
+{
+  "text": "Your transcribed audio text here",
+  "language": "en"
+}
+```
+
+**If you get a 401 error:** Billing is not enabled. Go to [platform.openai.com/account/billing/overview](https://platform.openai.com/account/billing/overview) and add a payment method.
+
+**If you get a 400 error:** Check that your audio file format is supported (mp3, wav, m4a, webm — max 25 MB).
 
 ---
 
@@ -1007,24 +1066,3 @@ Called automatically by pg_cron every minute. Can also be triggered manually (us
 | `CLICKSEND_FROM`            | Yes      | Sender ID (max 11 chars alphanumeric) |
 | `OPENAI_API_KEY`            | Yes      | OpenAI API key (for Whisper)          |
 | `NODE_ENV`                  | No       | `development` or `production`         |
-
-## Branch Protection Rules
-
-After pushing branches, go to repo → Settings → Branches
-
-### For branch `staging`
-
-1. Click "Add rule" → Pattern: staging
-2. ✅ Require a pull request before merging (1 approval if that makes sense with the number of people on the team = 1)
-3. ✅ Dismiss stale pull request approvals
-4. ✅ Require status checks to pass
-5. ✅ Require branches to be up to date
-6. ✅ Enforce all the above for administrators
-
-### For branch `main`
-
-1. Click "Add rule" → Pattern: main
-2. ✅ Require a pull request before merging (2 approvals)
-3. ✅ Require status checks to pass
-4. ✅ Require branches to be up to date
-5. ✅ Enforce all the above for administrators
