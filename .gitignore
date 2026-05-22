@@ -44,3 +44,7 @@ coverage/
 
 # Misc
 *.pem
+
+# Npm package lock
+package-lock.json
+package.json
