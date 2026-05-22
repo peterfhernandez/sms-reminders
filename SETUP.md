@@ -73,7 +73,7 @@ POST /functions/v1/create-reminder  (multipart, includes audio file)
 ### Branch strategy
 
 | Branch    | Purpose             | CI/CD action                              |
-|-----------|---------------------|-------------------------------------------|
+| --------- | ------------------- | ----------------------------------------- |
 | `develop` | Day-to-day work     | Lint + typecheck on every push            |
 | `staging` | Pre-release testing | Lint + typecheck + migrate + deploy funcs |
 | `main`    | Production          | Same as staging, against prod project     |
@@ -414,17 +414,18 @@ Protect `main` and `staging`:
 
 Go to your repo → **Settings → Secrets and variables → Actions → New repository secret**
 
-| Secret | Where to get it |
-|---|---|
-| `SUPABASE_ACCESS_TOKEN` | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) |
-| `STAGING_SUPABASE_PROJECT_REF` | Staging project → Settings → General |
-| `PROD_SUPABASE_PROJECT_REF` | Production project → Settings → General |
-| `CLICKSEND_USERNAME` | ClickSend dashboard → API Credentials |
-| `CLICKSEND_API_KEY` | ClickSend dashboard → API Credentials |
-| `CLICKSEND_FROM` | Your sender ID (e.g. `Reminders`) |
-| `OPENAI_API_KEY` | platform.openai.com → API keys |
+| Secret                         | Where to get it                                                                        |
+| ------------------------------ | -------------------------------------------------------------------------------------- |
+| `SUPABASE_ACCESS_TOKEN`        | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) |
+| `STAGING_SUPABASE_PROJECT_REF` | Staging project → Settings → General                                                   |
+| `PROD_SUPABASE_PROJECT_REF`    | Production project → Settings → General                                                |
+| `CLICKSEND_USERNAME`           | ClickSend dashboard → API Credentials                                                  |
+| `CLICKSEND_API_KEY`            | ClickSend dashboard → API Credentials                                                  |
+| `CLICKSEND_FROM`               | Your sender ID (e.g. `Reminders`)                                                      |
+| `OPENAI_API_KEY`               | platform.openai.com → API keys                                                         |
 
 These secrets are used by `deploy-staging.yml` and `deploy-production.yml` to:
+
 - Link and migrate each Supabase project
 - Set Edge Function secrets (`supabase secrets set ...`)
 - Deploy all three Edge Functions
@@ -495,11 +496,11 @@ on conflict do nothing;
 
 The project uses three test layers, each with a different scope and speed profile. CI only runs unit tests automatically (no infrastructure needed). Integration and e2e tests are run manually during development or against staging after a deploy.
 
-| Layer | Location | Runs against | When to run | Speed |
-|---|---|---|---|---|
-| Unit | `tests/unit/` | Nothing (pure functions) | Every commit — CI | < 5 s |
-| Integration | `tests/integration/` | Local Supabase | During development, before PRs | ~30 s |
-| E2E | `tests/e2e/` | Local or staging Supabase + real ClickSend | Before merging to main | ~60 s |
+| Layer       | Location             | Runs against                               | When to run                    | Speed |
+| ----------- | -------------------- | ------------------------------------------ | ------------------------------ | ----- |
+| Unit        | `tests/unit/`        | Nothing (pure functions)                   | Every commit — CI              | < 5 s |
+| Integration | `tests/integration/` | Local Supabase                             | During development, before PRs | ~30 s |
+| E2E         | `tests/e2e/`         | Local or staging Supabase + real ClickSend | Before merging to main         | ~60 s |
 
 Edge Functions (Deno) have their own test runner — see §Edge Function tests below.
 
@@ -606,8 +607,13 @@ Deno tests use the `Deno.test()` API and are already typechecked by CI via `deno
 `tests/helpers/supabase.js` provides shared utilities for integration and e2e tests:
 
 ```js
-import { sb, functionsUrl, anonHeaders, createTestReminder, cleanup }
-  from '../helpers/supabase.js';
+import {
+  sb,
+  functionsUrl,
+  anonHeaders,
+  createTestReminder,
+  cleanup,
+} from "../helpers/supabase.js";
 
 // sb              — service-role Supabase client (bypasses RLS)
 // functionsUrl    — base URL for Edge Functions, e.g. http://127.0.0.1:54321/functions/v1
@@ -620,26 +626,26 @@ Example integration test pattern (actual tests to be written later):
 
 ```js
 // tests/integration/create-reminder.test.js
-import { functionsUrl, anonHeaders, cleanup } from '../helpers/supabase.js';
+import { functionsUrl, anonHeaders, cleanup } from "../helpers/supabase.js";
 
 const createdIds = [];
 afterEach(() => cleanup(createdIds));
 
-test('creates a reminder from a valid JSON body', async () => {
+test("creates a reminder from a valid JSON body", async () => {
   const res = await fetch(`${functionsUrl}/create-reminder`, {
-    method: 'POST',
+    method: "POST",
     headers: anonHeaders,
     body: JSON.stringify({
-      phone:   '+61412345678',
-      message: 'Integration test reminder',
+      phone: "+61412345678",
+      message: "Integration test reminder",
       send_at: new Date(Date.now() + 3_600_000).toISOString(),
     }),
   });
 
   expect(res.status).toBe(201);
   const body = await res.json();
-  expect(body.status).toBe('pending');
-  createdIds.push(body.id);   // cleaned up in afterEach
+  expect(body.status).toBe("pending");
+  createdIds.push(body.id); // cleaned up in afterEach
 });
 ```
 
@@ -919,34 +925,34 @@ sms-reminders\
 
 ```json
 {
-  "phone":      "+61412345678",
-  "message":    "Reminder text (max 1600 chars)",
-  "send_at":    "2026-05-21T09:00:00+10:00",
-  "timezone":   "Australia/Sydney",
-  "name":       "Peter",
+  "phone": "+61412345678",
+  "message": "Reminder text (max 1600 chars)",
+  "send_at": "2026-05-21T09:00:00+10:00",
+  "timezone": "Australia/Sydney",
+  "name": "Peter",
   "recurrence": "0 9 * * 1"
 }
 ```
 
 **Multipart form (voice):**
 
-| Field    | Type   | Description |
-|----------|--------|-------------|
-| `audio`  | File   | Audio file (mp3, wav, m4a, webm — max 25 MB) |
-| `phone`  | string | E.164 format |
-| `send_at`| string | ISO 8601 future datetime |
-| `timezone`| string | Optional, default UTC |
-| `recurrence`| string | Optional cron expression |
+| Field        | Type   | Description                                  |
+| ------------ | ------ | -------------------------------------------- |
+| `audio`      | File   | Audio file (mp3, wav, m4a, webm — max 25 MB) |
+| `phone`      | string | E.164 format                                 |
+| `send_at`    | string | ISO 8601 future datetime                     |
+| `timezone`   | string | Optional, default UTC                        |
+| `recurrence` | string | Optional cron expression                     |
 
 **Response `201`:**
 
 ```json
 {
-  "id":      "uuid",
-  "phone":   "+61412345678",
+  "id": "uuid",
+  "phone": "+61412345678",
   "message": "Transcribed or provided message",
   "send_at": "2026-05-21T09:00:00+10:00",
-  "status":  "pending"
+  "status": "pending"
 }
 ```
 
@@ -956,8 +962,8 @@ sms-reminders\
 
 **Multipart form:**
 
-| Field   | Type | Description |
-|---------|------|-------------|
+| Field   | Type | Description            |
+| ------- | ---- | ---------------------- |
 | `audio` | File | Audio file (max 25 MB) |
 
 Query param: `?language=en` (default `en`)
@@ -966,7 +972,7 @@ Query param: `?language=en` (default `en`)
 
 ```json
 {
-  "text":     "Don't forget your doctor's appointment at 3pm",
+  "text": "Don't forget your doctor's appointment at 3pm",
   "language": "en"
 }
 ```
@@ -982,8 +988,8 @@ Called automatically by pg_cron every minute. Can also be triggered manually (us
 ```json
 {
   "processed": 3,
-  "sent":      2,
-  "failed":    1
+  "sent": 2,
+  "failed": 1
 }
 ```
 
@@ -991,13 +997,13 @@ Called automatically by pg_cron every minute. Can also be triggered manually (us
 
 ## Environment variables reference
 
-| Variable | Required | Description |
-|---|---|---|
-| `SUPABASE_URL` | Yes | Supabase project URL (local or cloud) |
-| `SUPABASE_ANON_KEY` | Yes | Public anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role key (server-side only) |
-| `CLICKSEND_USERNAME` | Yes | ClickSend account username |
-| `CLICKSEND_API_KEY` | Yes | ClickSend API key |
-| `CLICKSEND_FROM` | Yes | Sender ID (max 11 chars alphanumeric) |
-| `OPENAI_API_KEY` | Yes | OpenAI API key (for Whisper) |
-| `NODE_ENV` | No | `development` or `production` |
+| Variable                    | Required | Description                           |
+| --------------------------- | -------- | ------------------------------------- |
+| `SUPABASE_URL`              | Yes      | Supabase project URL (local or cloud) |
+| `SUPABASE_ANON_KEY`         | Yes      | Public anon key                       |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes      | Service role key (server-side only)   |
+| `CLICKSEND_USERNAME`        | Yes      | ClickSend account username            |
+| `CLICKSEND_API_KEY`         | Yes      | ClickSend API key                     |
+| `CLICKSEND_FROM`            | Yes      | Sender ID (max 11 chars alphanumeric) |
+| `OPENAI_API_KEY`            | Yes      | OpenAI API key (for Whisper)          |
+| `NODE_ENV`                  | No       | `development` or `production`         |
