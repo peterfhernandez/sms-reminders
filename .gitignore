@@ -46,5 +46,4 @@ coverage/
 *.pem
 
 # Npm package lock
-package-lock.json
-package.json
+# package-lock.json and package.json SHOULD be committed for consistent installs
