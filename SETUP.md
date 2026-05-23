@@ -274,6 +274,7 @@ This script installs missing tools, starts Supabase, applies migrations, auto-wr
 supabase db reset
 ```
 
+<<THIS IS NOT NEEDED FOR LOCAL DEV, ONLY FOR STAGE/PROD>>
 Then set the Postgres runtime settings that pg_cron needs to call your Edge Function. Connect to your local DB:
 
 ```powershell
@@ -287,6 +288,8 @@ ALTER DATABASE postgres SET app.supabase_url  = 'http://127.0.0.1:54321';
 ALTER DATABASE postgres SET app.service_role_key = '<your local service_role key>';
 \q
 ```
+
+<<---END--->>
 
 For production/staging, run the same `ALTER DATABASE` commands after deploying (or add them to the migration file — see the comment at the bottom of `001_initial_schema.sql`).
 
@@ -398,7 +401,7 @@ supabase functions serve
 
 # Terminal 3: send a test audio file (replace with your audio file path)
 $headers = @{ Authorization = "Bearer <local anon key>" }
-$form = @{ audio = Get-Item "C:\path\to\test.mp3" }
+$form = @{ audio = Get-Item "C:\Users\Peter\Documents\Recording.m4a" }
 Invoke-RestMethod `
   -Uri "http://127.0.0.1:54321/functions/v1/transcribe" `
   -Method POST `

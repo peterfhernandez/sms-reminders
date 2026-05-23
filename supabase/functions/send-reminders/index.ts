@@ -1,3 +1,4 @@
+// @supabase.auth: false
 /**
  * send-reminders Edge Function
  *
