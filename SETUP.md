@@ -400,7 +400,7 @@ supabase start
 supabase functions serve
 
 # Terminal 3: send a test audio file (replace with your audio file path)
-$headers = @{ Authorization = "Bearer <local anon key>" }
+$headers = @{ AuthapiKey = "Bearer <local anon key>" }
 $form = @{ audio = Get-Item "C:\Users\Peter\Documents\Recording.m4a" }
 Invoke-RestMethod `
   -Uri "http://127.0.0.1:54321/functions/v1/transcribe" `
@@ -456,7 +456,7 @@ Invoke-RestMethod `
 ### Create a reminder via voice
 
 ```powershell
-$headers = @{ Authorization = "Bearer <local anon key>" }
+$headers = @{ apiKey = "<local anon key>" }
 $form = @{
   audio    = Get-Item "C:\path\to\reminder.mp3"
   phone    = "+61400000000"
@@ -473,9 +473,11 @@ Invoke-RestMethod `
 ### Manually trigger the send function
 
 ```powershell
+$headers = @{ apiKey = "<local anon key>" }
 Invoke-RestMethod `
   -Uri "http://127.0.0.1:54321/functions/v1/send-reminders" `
   -Method POST `
+  -Headers $headers `
   -ContentType "application/json" `
   -Body "{}"
 ```

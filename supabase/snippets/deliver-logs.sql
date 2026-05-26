@@ -1,0 +1,1 @@
+select * from  delivery_log
