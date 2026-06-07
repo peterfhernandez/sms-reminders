@@ -1,17 +1,21 @@
-# Load .env.local from parent folder
-Get-Content .env.local | ForEach-Object {
-    if ($_ -match "^\s*#") { return }   # skip comments
-    if ($_ -match "^\s*$") { return }   # skip empty lines
-    $name, $value = $_ -split "=", 2
-    # Set in current process scope
-    [System.Environment]::SetEnvironmentVariable($name, $value, "Process")
+# Verify Supabase is running
+Write-Host "Checking Supabase status..." -ForegroundColor Cyan
+$status = supabase status 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "✗ Supabase is not running. Start it first with: supabase start" -ForegroundColor Red
+    exit 1
 }
 
-Write-Host "Environment variables loaded:" -ForegroundColor Green
-Write-Host "  SMS_PROVIDER: $env:SMS_PROVIDER"
-Write-Host "  TWILIO_ACCOUNT_SID: $($env:TWILIO_ACCOUNT_SID.Substring(0, 5))..."
-Write-Host "  TWILIO_FROM: $env:TWILIO_FROM"
+Write-Host "✓ Supabase is running" -ForegroundColor Green
+
+# Verify .env.local exists
+if (-not (Test-Path ".env.local")) {
+    Write-Host "✗ .env.local not found. Copy .env.example to .env.local and fill in your credentials." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "✓ .env.local found" -ForegroundColor Green
 Write-Host ""
 
-Write-Host "Starting supabase functions serve..." -ForegroundColor Green
-supabase functions serve
+Write-Host "Starting supabase functions serve with .env.local..." -ForegroundColor Green
+supabase functions serve --env-file .env.local

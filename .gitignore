@@ -48,3 +48,6 @@ coverage/
 
 # Npm package lock
 # package-lock.json and package.json SHOULD be committed for consistent installs
+
+# start_test_functions.ps1
+scripts/start-test-functions*.ps1

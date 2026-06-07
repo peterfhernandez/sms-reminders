@@ -20,14 +20,34 @@ const SMS_PROVIDER         = Deno.env.get("SMS_PROVIDER") ?? "clicksend";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+// Log loaded configuration
+console.log("=== send-reminders initialization ===");
+console.log(`SMS_PROVIDER: ${SMS_PROVIDER}`);
+console.log(`SUPABASE_URL: ${SUPABASE_URL}`);
+
+// Debug: show which env vars are loaded
+const clicksendUsername = Deno.env.get("CLICKSEND_USERNAME");
+const clicksendApiKey = Deno.env.get("CLICKSEND_API_KEY");
+const clicksendFrom = Deno.env.get("CLICKSEND_FROM");
+const twilioAccountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+const twilioAuthToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+const twilioFrom = Deno.env.get("TWILIO_FROM");
+
+console.log(`CLICKSEND_USERNAME: ${clicksendUsername ? "✓ set" : "✗ NOT SET"}`);
+console.log(`CLICKSEND_API_KEY: ${clicksendApiKey ? "✓ set (" + clicksendApiKey.substring(0, 8) + "...)" : "✗ NOT SET"}`);
+console.log(`CLICKSEND_FROM: ${clicksendFrom ? "✓ " + clicksendFrom : "✗ NOT SET"}`);
+console.log(`TWILIO_ACCOUNT_SID: ${twilioAccountSid ? "✓ set" : "✗ NOT SET"}`);
+console.log(`TWILIO_AUTH_TOKEN: ${twilioAuthToken ? "✓ set" : "✗ NOT SET"}`);
+console.log(`TWILIO_FROM: ${twilioFrom ? "✓ " + twilioFrom : "✗ NOT SET"}`);
+
 // Create SMS provider instance
 const smsProvider = createSmsProvider(SMS_PROVIDER, {
-  CLICKSEND_USERNAME: Deno.env.get("CLICKSEND_USERNAME") ?? "",
-  CLICKSEND_API_KEY: Deno.env.get("CLICKSEND_API_KEY") ?? "",
-  CLICKSEND_FROM: Deno.env.get("CLICKSEND_FROM") ?? "SMSReminder",
-  TWILIO_ACCOUNT_SID: Deno.env.get("TWILIO_ACCOUNT_SID") ?? "",
-  TWILIO_AUTH_TOKEN: Deno.env.get("TWILIO_AUTH_TOKEN") ?? "",
-  TWILIO_FROM: Deno.env.get("TWILIO_FROM") ?? "",
+  CLICKSEND_USERNAME: clicksendUsername ?? "",
+  CLICKSEND_API_KEY: clicksendApiKey ?? "",
+  CLICKSEND_FROM: clicksendFrom ?? "SMSReminder",
+  TWILIO_ACCOUNT_SID: twilioAccountSid ?? "",
+  TWILIO_AUTH_TOKEN: twilioAuthToken ?? "",
+  TWILIO_FROM: twilioFrom ?? "",
 });
 
 // ── Cron expression helper ────────────────────────────────────────────────────
@@ -80,7 +100,15 @@ serve(async (_req: Request) => {
   const results = await Promise.allSettled(
     due.map(async (reminder) => {
       // 1. Attempt SMS send via configured provider
+      console.log(`\n--- Processing reminder ${reminder.id} ---`);
+      console.log(`  To: ${reminder.phone}`);
+      console.log(`  Message: ${reminder.message.substring(0, 50)}...`);
+
       const result = await smsProvider.send(reminder.phone, reminder.message);
+
+      console.log(`  Provider response status: ${result.httpStatus}`);
+      console.log(`  Success: ${result.success}`);
+      console.log(`  Response body:`, JSON.stringify(result.body, null, 2));
 
       // 2. Log the attempt
       await supabase.from("delivery_log").insert({

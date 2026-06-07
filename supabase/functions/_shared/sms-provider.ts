@@ -26,7 +26,14 @@ class ClickSendProvider implements SMSProvider {
   }
 
   async send(to: string, message: string): Promise<SMSSendResult> {
+    console.log(`\n[ClickSend] Sending SMS...`);
+    console.log(`  Username: ${this.username}`);
+    console.log(`  From: ${this.from}`);
+    console.log(`  To: ${to}`);
+
     const credentials = btoa(`${this.username}:${this.apiKey}`);
+    const credentialsForLog = btoa(`${this.username}:${this.apiKey.substring(0, 4)}...`);
+    console.log(`  Basic Auth header: Basic ${credentialsForLog}`);
 
     const payload = {
       messages: [
@@ -39,6 +46,8 @@ class ClickSendProvider implements SMSProvider {
       ],
     };
 
+    console.log(`  Request payload:`, JSON.stringify(payload, null, 2));
+
     const res = await fetch("https://rest.clicksend.com/v3/sms/send", {
       method: "POST",
       headers: {
@@ -48,10 +57,15 @@ class ClickSendProvider implements SMSProvider {
       body: JSON.stringify(payload),
     });
 
+    console.log(`  HTTP Status: ${res.status}`);
     const responseBody = await res.json().catch(() => null);
+    console.log(`  Response body:`, JSON.stringify(responseBody, null, 2));
+
     const success =
       res.status === 200 &&
       responseBody?.data?.messages?.[0]?.status === "SUCCESS";
+
+    console.log(`  Success: ${success}`);
 
     return {
       success,
