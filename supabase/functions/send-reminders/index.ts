@@ -1,71 +1,54 @@
+// @supabase.auth: false
 /**
  * send-reminders Edge Function
  *
  * Invoked by pg_cron every minute.
  * Queries for pending reminders where send_at <= now(),
- * sends each via ClickSend, marks sent/failed, logs result,
- * and re-queues recurring reminders.
+ * sends each via the configured SMS provider (ClickSend or Twilio),
+ * marks sent/failed, logs result, and re-queues recurring reminders.
  *
  * POST /functions/v1/send-reminders  (body ignored)
  */
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createSmsProvider } from "../_shared/sms-provider.ts";
 
 const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const CLICKSEND_USERNAME   = Deno.env.get("CLICKSEND_USERNAME")!;
-const CLICKSEND_API_KEY    = Deno.env.get("CLICKSEND_API_KEY")!;
-const CLICKSEND_FROM       = Deno.env.get("CLICKSEND_FROM") ?? "SMSReminder";
+const SMS_PROVIDER         = Deno.env.get("SMS_PROVIDER") ?? "clicksend";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-// ── ClickSend API ─────────────────────────────────────────────────────────────
+// Log loaded configuration
+console.log("=== send-reminders initialization ===");
+console.log(`SMS_PROVIDER: ${SMS_PROVIDER}`);
+console.log(`SUPABASE_URL: ${SUPABASE_URL}`);
 
-interface ClickSendResult {
-  success: boolean;
-  messageId?: string;
-  httpStatus: number;
-  body: unknown;
-}
+// Debug: show which env vars are loaded
+const clicksendUsername = Deno.env.get("CLICKSEND_USERNAME");
+const clicksendApiKey = Deno.env.get("CLICKSEND_API_KEY");
+const clicksendFrom = Deno.env.get("CLICKSEND_FROM");
+const twilioAccountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+const twilioAuthToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+const twilioFrom = Deno.env.get("TWILIO_FROM");
 
-async function sendViaClickSend(
-  to: string,
-  body: string
-): Promise<ClickSendResult> {
-  const credentials = btoa(`${CLICKSEND_USERNAME}:${CLICKSEND_API_KEY}`);
+console.log(`CLICKSEND_USERNAME: ${clicksendUsername ? "✓ set" : "✗ NOT SET"}`);
+console.log(`CLICKSEND_API_KEY: ${clicksendApiKey ? "✓ set (" + clicksendApiKey.substring(0, 8) + "...)" : "✗ NOT SET"}`);
+console.log(`CLICKSEND_FROM: ${clicksendFrom ? "✓ " + clicksendFrom : "✗ NOT SET"}`);
+console.log(`TWILIO_ACCOUNT_SID: ${twilioAccountSid ? "✓ set" : "✗ NOT SET"}`);
+console.log(`TWILIO_AUTH_TOKEN: ${twilioAuthToken ? "✓ set" : "✗ NOT SET"}`);
+console.log(`TWILIO_FROM: ${twilioFrom ? "✓ " + twilioFrom : "✗ NOT SET"}`);
 
-  const payload = {
-    messages: [
-      {
-        to,
-        body,
-        source: "sms-reminders",
-        from: CLICKSEND_FROM,
-      },
-    ],
-  };
-
-  const res = await fetch("https://rest.clicksend.com/v3/sms/send", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const responseBody = await res.json().catch(() => null);
-  const success      = res.status === 200 &&
-                       responseBody?.data?.messages?.[0]?.status === "SUCCESS";
-
-  return {
-    success,
-    messageId:  responseBody?.data?.messages?.[0]?.message_id,
-    httpStatus: res.status,
-    body:       responseBody,
-  };
-}
+// Create SMS provider instance
+const smsProvider = createSmsProvider(SMS_PROVIDER, {
+  CLICKSEND_USERNAME: clicksendUsername ?? "",
+  CLICKSEND_API_KEY: clicksendApiKey ?? "",
+  CLICKSEND_FROM: clicksendFrom ?? "SMSReminder",
+  TWILIO_ACCOUNT_SID: twilioAccountSid ?? "",
+  TWILIO_AUTH_TOKEN: twilioAuthToken ?? "",
+  TWILIO_FROM: twilioFrom ?? "",
+});
 
 // ── Cron expression helper ────────────────────────────────────────────────────
 // Advance a cron schedule to the next occurrence after `from`.
@@ -116,8 +99,16 @@ serve(async (_req: Request) => {
 
   const results = await Promise.allSettled(
     due.map(async (reminder) => {
-      // 1. Attempt SMS send
-      const result = await sendViaClickSend(reminder.phone, reminder.message);
+      // 1. Attempt SMS send via configured provider
+      console.log(`\n--- Processing reminder ${reminder.id} ---`);
+      console.log(`  To: ${reminder.phone}`);
+      console.log(`  Message: ${reminder.message.substring(0, 50)}...`);
+
+      const result = await smsProvider.send(reminder.phone, reminder.message);
+
+      console.log(`  Provider response status: ${result.httpStatus}`);
+      console.log(`  Success: ${result.success}`);
+      console.log(`  Response body:`, JSON.stringify(result.body, null, 2));
 
       // 2. Log the attempt
       await supabase.from("delivery_log").insert({
@@ -129,10 +120,11 @@ serve(async (_req: Request) => {
 
       // 3. Update reminder status
       const updatePayload: Record<string, unknown> = {
-        status:           result.success ? "sent" : "failed",
-        sent_at:          result.success ? new Date().toISOString() : null,
-        error_msg:        result.success ? null : JSON.stringify(result.body),
-        clicksend_msg_id: result.messageId ?? null,
+        status:         result.success ? "sent" : "failed",
+        sent_at:        result.success ? new Date().toISOString() : null,
+        error_msg:      result.success ? null : JSON.stringify(result.body),
+        provider:       SMS_PROVIDER,
+        provider_msg_id: result.messageId ?? null,
       };
 
       // 4. Re-queue if recurring

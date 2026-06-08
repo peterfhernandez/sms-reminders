@@ -1,12 +1,12 @@
 # SMS Reminders — Setup Guide (Windows 11)
 
-**Stack:** Supabase (Postgres + Edge Functions + pg_cron) · ClickSend (SMS) · Whisper/OpenAI (voice-to-text) · Node.js (local tooling) · Docker · GitHub Actions
+**Stack:** Supabase (Postgres + Edge Functions + pg_cron) · SMS Provider (ClickSend or Twilio) · Whisper/OpenAI (voice-to-text) · Node.js (local tooling) · Docker · GitHub Actions
 
 ---
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  LOCAL DEV (your Windows 11 machine)                        │
 │                                                             │
@@ -34,7 +34,7 @@
 │                   ▼                                         │
 │  Edge Function: send-reminders                              │
 │      │  queries pending reminders                           │
-│      │  calls ClickSend REST API                            │
+│      │  calls SMS provider (ClickSend or Twilio)            │
 │      │  marks reminder sent/failed                          │
 │      └─► delivery_log                                       │
 │                                                             │
@@ -51,7 +51,7 @@
 
 ### Data flow: voice reminder
 
-```
+```text
 User records audio
       │
       ▼
@@ -67,7 +67,8 @@ POST /functions/v1/create-reminder  (multipart, includes audio file)
                                           │
                               send-reminders Edge Function
                                           │
-                              ClickSend REST API → SMS delivered
+                              SMS Provider REST API → SMS delivered
+                              (ClickSend or Twilio)
 ```
 
 ### Branch strategy
@@ -77,6 +78,27 @@ POST /functions/v1/create-reminder  (multipart, includes audio file)
 | `develop` | Day-to-day work     | Lint + typecheck on every push            |
 | `staging` | Pre-release testing | Lint + typecheck + migrate + deploy funcs |
 | `main`    | Production          | Same as staging, against prod project     |
+
+### Branch Protection Rules
+
+After pushing branches, go to repo → Settings → Branches
+
+#### For branch `staging`
+
+1. Click "Add rule" → Pattern: staging
+2. ✅ Require a pull request before merging (1 approval if that makes sense with the number of people on the team = 1)
+3. ✅ Dismiss stale pull request approvals
+4. ✅ Require status checks to pass
+5. ✅ Require branches to be up to date
+6. ✅ Enforce all the above for administrators
+
+#### For branch `main`
+
+1. Click "Add rule" → Pattern: main
+2. ✅ Require a pull request before merging (2 approvals)
+3. ✅ Require status checks to pass
+4. ✅ Require branches to be up to date
+5. ✅ Enforce all the above for administrators
 
 ---
 
@@ -195,7 +217,7 @@ Get a personal access token for CI/CD:
 
 ```powershell
 # From your project folder:
-Copy-Item .env.example .env
+Copy-Item .env.example .env.local
 ```
 
 Start local Supabase:
@@ -206,7 +228,7 @@ supabase start
 
 You'll see output like:
 
-```
+```env
 API URL: http://127.0.0.1:54321
 DB URL:  postgresql://postgres:postgres@127.0.0.1:54322/postgres
 Studio:  http://127.0.0.1:54323
@@ -214,7 +236,7 @@ anon key:          eyJ...
 service_role key:  eyJ...
 ```
 
-Copy these into `.env`:
+Copy these into `.env.local`:
 
 ```env
 SUPABASE_URL=http://127.0.0.1:54321
@@ -231,7 +253,7 @@ CLICKSEND_FROM=Reminders
 OPENAI_API_KEY=sk-...
 ```
 
-> `.env` is in `.gitignore` — it will never be committed to git.
+> `.env.local` is in `.gitignore` — it will never be committed to git.
 
 ### The automated route (alternative)
 
@@ -241,7 +263,7 @@ Instead of the manual steps above, just run:
 .\scripts\Setup-Local.ps1
 ```
 
-This script installs missing tools, starts Supabase, applies migrations, auto-writes the Supabase keys into `.env`, and seeds sample data. You still need to add ClickSend and OpenAI keys manually.
+This script installs missing tools, starts Supabase, applies migrations, auto-writes the Supabase keys into `.env.local`, and seeds sample data. You still need to add ClickSend and OpenAI keys manually.
 
 ---
 
@@ -252,6 +274,7 @@ This script installs missing tools, starts Supabase, applies migrations, auto-wr
 supabase db reset
 ```
 
+<<THIS IS NOT NEEDED FOR LOCAL DEV, ONLY FOR STAGE/PROD>>
 Then set the Postgres runtime settings that pg_cron needs to call your Edge Function. Connect to your local DB:
 
 ```powershell
@@ -266,11 +289,17 @@ ALTER DATABASE postgres SET app.service_role_key = '<your local service_role key
 \q
 ```
 
+<<---END--->>
+
 For production/staging, run the same `ALTER DATABASE` commands after deploying (or add them to the migration file — see the comment at the bottom of `001_initial_schema.sql`).
 
 ---
 
-## Step 6 — Set up ClickSend
+## Step 6 — Set up SMS Provider (ClickSend or Twilio)
+
+Choose **one** provider: ClickSend or Twilio. The system uses the `SMS_PROVIDER` environment variable to switch between them at runtime.
+
+### Option A: ClickSend
 
 1. Create an account at [clicksend.com](https://www.clicksend.com)
 2. Go to **Dashboard → API Credentials** — copy your username and API key
@@ -278,6 +307,14 @@ For production/staging, run the same `ALTER DATABASE` commands after deploying (
    - Use a short alphanumeric name (max 11 chars), e.g. `Reminders`
    - OR buy a virtual number from ClickSend for two-way SMS
 4. Add test credits — ClickSend has a free trial with AUD credit
+5. Set in `.env.local`:
+
+   ```env
+   SMS_PROVIDER=clicksend
+   CLICKSEND_USERNAME=your-username
+   CLICKSEND_API_KEY=your-api-key
+   CLICKSEND_FROM=Reminders
+   ```
 
 Test a send manually:
 
@@ -290,29 +327,100 @@ Invoke-RestMethod `
   -Body '{"messages":[{"to":"+61400000000","body":"Test from SMS Reminders","from":"Reminders"}]}'
 ```
 
+### Option B: Twilio
+
+1. Create an account at [twilio.com](https://www.twilio.com)
+2. Go to **Console → Account Info** — copy your Account SID and Auth Token
+3. In the **Phone Numbers** section, purchase an SMS-capable phone number (or use your trial number)
+4. Set in `.env.local`:
+
+   ```env
+   SMS_PROVIDER=twilio
+   TWILIO_ACCOUNT_SID=your-account-sid
+   TWILIO_AUTH_TOKEN=your-auth-token
+   TWILIO_FROM=+1234567890
+   ```
+
+   Replace `+1234567890` with your Twilio phone number in E.164 format (includes country code)
+
+5. **Enable billing** if using production (trial accounts have limited SMS credits)
+
+Test a send manually:
+
+```powershell
+$accountSid = "your-account-sid"
+$authToken = "your-auth-token"
+$creds = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$accountSid:$authToken"))
+$body = "To=%2B61400000000&From=%2B1234567890&Body=Test+from+SMS+Reminders"
+
+Invoke-RestMethod `
+  -Uri "https://api.twilio.com/2010-04-01/Accounts/$accountSid/Messages.json" `
+  -Method POST `
+  -Headers @{ Authorization = "Basic $creds"; "Content-Type" = "application/x-www-form-urlencoded" } `
+  -Body $body
+```
+
 ---
 
 ## Step 7 — Set up OpenAI (Whisper)
 
-1. Go to [platform.openai.com](https://platform.openai.com) → **API keys** → **Create new secret key**
-2. Copy the key into `.env` as `OPENAI_API_KEY=sk-...`
-3. Ensure you have billing set up — Whisper costs ~$0.006/minute of audio
+OpenAI's Whisper API transcribes audio files to text. This is required for voice-based reminders.
+
+### Prerequisites
+
+- An OpenAI account (sign up at [platform.openai.com](https://platform.openai.com) if you don't have one)
+- **Billing enabled** on your account — Whisper costs ~$0.006 per minute of audio
+
+### Setup
+
+1. Go to [platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys)
+2. Click **Create new secret key**
+3. **Set permissions** (important for security):
+   - **Project**: Select your project (or create one called "SMS Reminders")
+   - **Permissions**: Restrict to **Whisper API only** (do NOT give it access to GPT-4, GPT-3.5, or other models)
+   - This means if the key leaks, attackers can only use it for transcription, not expensive model calls
+4. Click **Create** and copy the key immediately (you won't be able to see it again)
+5. Add it to `.env.local`:
+
+   ```env
+   OPENAI_API_KEY=sk-proj-...
+   ```
+
+6. **Enable billing:** Go to [platform.openai.com/account/billing/overview](https://platform.openai.com/account/billing/overview) and add a payment method. Without billing enabled, API calls will fail with a 401 error.
+
+### Verify it works
 
 Test transcription locally with the Edge Function:
 
 ```powershell
-# Serve functions locally (in a separate terminal):
+# Terminal 1: start Supabase
+supabase start
+
+# Terminal 2: serve Edge Functions
 supabase functions serve
 
-# In another terminal — send a test audio file:
-$headers = @{ Authorization = "Bearer <local anon key>" }
-$form = @{ audio = Get-Item "C:\path\to\test.mp3" }
+# Terminal 3: send a test audio file (replace with your audio file path)
+$headers = @{ AuthapiKey = "Bearer <local anon key>" }
+$form = @{ audio = Get-Item "C:\Users\Peter\Documents\Recording.m4a" }
 Invoke-RestMethod `
   -Uri "http://127.0.0.1:54321/functions/v1/transcribe" `
   -Method POST `
   -Headers $headers `
   -Form $form
 ```
+
+You should see:
+
+```json
+{
+  "text": "Your transcribed audio text here",
+  "language": "en"
+}
+```
+
+**If you get a 401 error:** Billing is not enabled. Go to [platform.openai.com/account/billing/overview](https://platform.openai.com/account/billing/overview) and add a payment method.
+
+**If you get a 400 error:** Check that your audio file format is supported (mp3, wav, m4a, webm — max 25 MB).
 
 ---
 
@@ -348,7 +456,7 @@ Invoke-RestMethod `
 ### Create a reminder via voice
 
 ```powershell
-$headers = @{ Authorization = "Bearer <local anon key>" }
+$headers = @{ apiKey = "<local anon key>" }
 $form = @{
   audio    = Get-Item "C:\path\to\reminder.mp3"
   phone    = "+61400000000"
@@ -365,9 +473,11 @@ Invoke-RestMethod `
 ### Manually trigger the send function
 
 ```powershell
+$headers = @{ apiKey = "<local anon key>" }
 Invoke-RestMethod `
   -Uri "http://127.0.0.1:54321/functions/v1/send-reminders" `
   -Method POST `
+  -Headers $headers `
   -ContentType "application/json" `
   -Body "{}"
 ```
@@ -414,15 +524,33 @@ Protect `main` and `staging`:
 
 Go to your repo → **Settings → Secrets and variables → Actions → New repository secret**
 
+### Required secrets (all environments)
+
 | Secret                         | Where to get it                                                                        |
 | ------------------------------ | -------------------------------------------------------------------------------------- |
 | `SUPABASE_ACCESS_TOKEN`        | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) |
 | `STAGING_SUPABASE_PROJECT_REF` | Staging project → Settings → General                                                   |
 | `PROD_SUPABASE_PROJECT_REF`    | Production project → Settings → General                                                |
-| `CLICKSEND_USERNAME`           | ClickSend dashboard → API Credentials                                                  |
-| `CLICKSEND_API_KEY`            | ClickSend dashboard → API Credentials                                                  |
-| `CLICKSEND_FROM`               | Your sender ID (e.g. `Reminders`)                                                      |
+| `SMS_PROVIDER`                 | Your choice: `clicksend` or `twilio`                                                   |
 | `OPENAI_API_KEY`               | platform.openai.com → API keys                                                         |
+
+### SMS Provider secrets (choose one set)
+
+**If `SMS_PROVIDER=clicksend`:**
+
+| Secret               | Where to get it                       |
+| -------------------- | ------------------------------------- |
+| `CLICKSEND_USERNAME` | ClickSend dashboard → API Credentials |
+| `CLICKSEND_API_KEY`  | ClickSend dashboard → API Credentials |
+| `CLICKSEND_FROM`     | Your sender ID (e.g. `Reminders`)     |
+
+**If `SMS_PROVIDER=twilio`:**
+
+| Secret               | Where to get it               |
+| -------------------- | ----------------------------- |
+| `TWILIO_ACCOUNT_SID` | Twilio console → Account Info |
+| `TWILIO_AUTH_TOKEN`  | Twilio console → Account Info |
+| `TWILIO_FROM`        | Your Twilio phone number      |
 
 These secrets are used by `deploy-staging.yml` and `deploy-production.yml` to:
 
@@ -440,10 +568,22 @@ These secrets are used by `deploy-staging.yml` and `deploy-production.yml` to:
 supabase link --project-ref <STAGING_PROJECT_REF>
 supabase db push
 
+# Set secrets — choose the appropriate set based on your SMS provider
+
+# If using ClickSend:
 supabase secrets set `
+  SMS_PROVIDER="clicksend" `
   CLICKSEND_USERNAME="your-username" `
   CLICKSEND_API_KEY="your-api-key" `
   CLICKSEND_FROM="Reminders" `
+  OPENAI_API_KEY="sk-..."
+
+# OR if using Twilio:
+supabase secrets set `
+  SMS_PROVIDER="twilio" `
+  TWILIO_ACCOUNT_SID="your-account-sid" `
+  TWILIO_AUTH_TOKEN="your-auth-token" `
+  TWILIO_FROM="+1234567890" `
   OPENAI_API_KEY="sk-..."
 
 supabase functions deploy create-reminder --no-verify-jwt
@@ -496,11 +636,11 @@ on conflict do nothing;
 
 The project uses three test layers, each with a different scope and speed profile. CI only runs unit tests automatically (no infrastructure needed). Integration and e2e tests are run manually during development or against staging after a deploy.
 
-| Layer       | Location             | Runs against                               | When to run                    | Speed |
-| ----------- | -------------------- | ------------------------------------------ | ------------------------------ | ----- |
-| Unit        | `tests/unit/`        | Nothing (pure functions)                   | Every commit — CI              | < 5 s |
-| Integration | `tests/integration/` | Local Supabase                             | During development, before PRs | ~30 s |
-| E2E         | `tests/e2e/`         | Local or staging Supabase + real ClickSend | Before merging to main         | ~60 s |
+| Layer       | Location             | Runs against                                | When to run                    | Speed |
+| ----------- | -------------------- | ------------------------------------------- | ------------------------------ | ----- |
+| Unit        | `tests/unit/`        | Nothing (pure functions)                    | Every commit — CI              | < 5 s |
+| Integration | `tests/integration/` | Local Supabase                              | During development, before PRs | ~30 s |
+| E2E         | `tests/e2e/`         | Local or stage Supabase + real SMS provider | Before merging to main         | ~60 s |
 
 Edge Functions (Deno) have their own test runner — see §Edge Function tests below.
 
@@ -508,7 +648,7 @@ Edge Functions (Deno) have their own test runner — see §Edge Function tests b
 
 ### Folder structure
 
-```
+```text
 tests/
 ├── unit/                        # Pure logic — no network, no database
 │   ├── reminders/               # CLI tool logic (validation, formatting, etc.)
@@ -575,7 +715,7 @@ npm run test:coverage
 
 Edge Functions run on Deno, so their logic is tested with Deno's built-in test runner rather than Jest. Test files live alongside the function code:
 
-```
+```text
 supabase/functions/
 ├── create-reminder/
 │   ├── index.ts
@@ -757,7 +897,7 @@ npm run reminders -- list --phone=+61412345678
 
 Output looks like:
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ ID         │ Phone          │ Name   │ Status  │ Send at             │ Recurs │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -875,7 +1015,7 @@ git log --oneline --graph --all   # visual branch history
 
 ## Project structure
 
-```
+```text
 sms-reminders\
 ├── .github\
 │   └── workflows\

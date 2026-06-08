@@ -1,6 +1,6 @@
 -- ============================================================
 -- SMS Reminders — Initial Schema
--- Stack: Supabase (Postgres) + pg_cron + ClickSend + Whisper
+-- Stack: Supabase (Postgres) + pg_cron + SMS Provider (ClickSend/Twilio) + Whisper
 -- ============================================================
 
 -- Enable required extensions
@@ -35,7 +35,8 @@ create table if not exists public.reminders (
                   check (status in ('pending','sent','failed','cancelled')),
   sent_at       timestamptz,
   error_msg     text,
-  clicksend_msg_id text,                     -- ClickSend message ID for delivery receipts
+  provider      text,                        -- SMS provider used (clicksend, twilio, etc)
+  provider_msg_id text,                      -- Provider-specific message ID for delivery receipts
 
   -- Audit
   created_at    timestamptz not null default now(),

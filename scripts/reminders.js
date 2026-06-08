@@ -25,19 +25,14 @@ import { config }        from "dotenv";
 import { parseArgs }     from "node:util";
 import { stdin as input } from "node:process";
 import * as readline     from "node:readline/promises";
+import { existsSync }    from "node:fs";
 
-config(); // load .env
-
-// ── Supabase client ───────────────────────────────────────────────────────────
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  die("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env");
+// Load from .env.local if it exists, otherwise .env
+if (existsSync(".env.local")) {
+  config({ path: ".env.local" });
+} else {
+  config();
 }
-
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
 
@@ -53,6 +48,17 @@ const c = {
   white:  "\x1b[37m",
   gray:   "\x1b[90m",
 };
+
+// ── Supabase client ───────────────────────────────────────────────────────────
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  die("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env");
+}
+
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const STATUS_COLOUR = {
   pending:   c.yellow,
@@ -255,7 +261,7 @@ async function cmdEdit(id, updates) {
     die("Provide at least one field to update: --message, --send-at, --recurrence, --phone, --name");
   }
 
-  const { data, error } = await sb
+  const { error } = await sb
     .from("reminders")
     .update(updates)
     .eq("id", id)

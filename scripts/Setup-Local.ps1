@@ -82,12 +82,12 @@ OK "npm packages installed"
 
 # ── 7. Create .env if missing ─────────────────────────────────
 STEP "Setting up environment file"
-if (-not (Test-Path ".env")) {
-    Copy-Item ".env.example" ".env"
-    WARN ".env created from .env.example"
+if (-not (Test-Path ".\.env.local")) {
+    Copy-Item ".env.example" ".env.local"
+    WARN ".env.local created from .env.example"
     WARN "You must fill in .env BEFORE running functions — see SETUP.md §3"
 } else {
-    OK ".env already exists"
+    OK ".env.local already exists"
 }
 
 # ── 8. Start local Supabase ───────────────────────────────────
@@ -106,13 +106,13 @@ $anonKey     = $status.ANON_KEY
 $serviceKey  = $status.SERVICE_ROLE_KEY
 
 # Update .env in-place
-(Get-Content ".env") `
+(Get-Content ".env.local") `
     -replace 'SUPABASE_URL=.*',              "SUPABASE_URL=$apiUrl" `
     -replace 'SUPABASE_ANON_KEY=.*',         "SUPABASE_ANON_KEY=$anonKey" `
     -replace 'SUPABASE_SERVICE_ROLE_KEY=.*', "SUPABASE_SERVICE_ROLE_KEY=$serviceKey" |
-    Set-Content ".env"
+    Set-Content ".env.local"
 
-OK "SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY written to .env"
+OK "SUPABASE_URL, ANON_KEY, SERVICE_ROLE_KEY written to .env.local"
 
 # ── 11. Seed sample data ──────────────────────────────────────
 STEP "Seeding sample reminders"

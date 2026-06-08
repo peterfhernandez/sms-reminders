@@ -1,3 +1,4 @@
+// @supabase.auth: false
 /**
  * transcribe Edge Function
  *
